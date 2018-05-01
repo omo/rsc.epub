@@ -3,6 +3,7 @@ import urllib.parse
 import os.path
 import shutil
 import sys
+import subprocess
 from typing import List, Tuple, Mapping
 from bs4 import BeautifulSoup
 
@@ -14,6 +15,9 @@ UrlToFile = Tuple[str, str]
 FETCH_DIR='./f'
 PLACE_DIR='./p'
 
+TITLE_TEXT = 'metadata.txt'
+COVER = 'cover.jpeg'
+HTML = 'chapters.html'
 INDEX_URL='https://research.swtch.com/'
 
 def fetch_url(url: str) -> str:
@@ -59,10 +63,15 @@ TEMPLATE = """
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>{0}</title>
+  <title>research!rsc</title>
 </head>
 <body>
-{1}
+<h1>About This EPUB File</h1>
+<p>This EPUB packages Russ Cox's <href='https://research.swtch.com/'>great blog articles</a> for offline reading.
+This file is not affiliated with Russ Cox himself. So please don't contact him about the EPUB packaging and 
+formatting problems. This is provided best-effort basis from one of his fans.</p>
+<p>The original articles are licensed under a <a href="https://creativecommons.org/licenses/by/4.0/">Creative Commons Lisence</a>.</p>
+{0}
 </body>
 </html>
 """
@@ -74,7 +83,7 @@ def format(text: str):
     return TEMPLATE.format(title, str(main))
 
 
-def relink(dest: str, pageurl: str, text: str):
+def relink(dest: str, pageurl: str, text: str) -> BeautifulSoup:
     page = BeautifulSoup(text, 'html.parser')
     for i in page.find_all('img'):
         s = fetch_url(urllib.parse.urljoin(pageurl, i.get('src')))
@@ -86,23 +95,13 @@ def relink(dest: str, pageurl: str, text: str):
         href = a.get('href')
         if not urllib.parse.urlsplit(href).scheme:
             a['href'] = urllib.parse.urljoin(pageurl, href)
-    return str(page)
+    return page
 
-
-def place(dest: str, nch: int, page: UrlToFile) -> str:
-    make_sure(dest)
-    url = page[0]
-    src = fetch_url(url)
-    text = open(src).read()
-    text = format(text)
-    text = relink(dest, url, text)
-    filename = os.path.join(dest, 'chapter{:0>3}.html'.format(nch))
-    open(filename, 'w').write(text)
-    return filename
 
 def drop_placed_dir(path):
     comps = os.path.split(path)
     return os.path.join(*[i for i in comps if i != PLACE_DIR])
+
 
 if __name__ == "__main__":
     print("Fetching...")
@@ -110,11 +109,25 @@ if __name__ == "__main__":
     pages: List[UrlToFile] = reversed(fetch_all())
     print("Copying...")
     make_sure(PLACE_DIR)
-    copied_pages = [ place(PLACE_DIR, i, p) for i, p in enumerate(pages) ]
-    TITLE_TEXT = 'title.txt'
+    soups = [ relink(PLACE_DIR, p[0], open(p[1]).read()) for p in pages ]
+
+    root = BeautifulSoup(features='html.parser')
+    for s in soups:
+        root.append(s.select(".article")[0])
+    for i in root.select(".article"):
+        i.unwrap()
+    
+    htmltext = TEMPLATE.format(str(root))
+    placed_html = os.path.join(PLACE_DIR, HTML)
+    open(placed_html, 'w').write(htmltext)
     placed_title = os.path.join(PLACE_DIR, TITLE_TEXT)
     shutil.copy(TITLE_TEXT, placed_title)
+    placed_cover = os.path.join(PLACE_DIR, COVER)
+    shutil.copy(COVER, placed_cover)
 
-    cmd = ['pandoc', '-o', 'rsc.epub', placed_title] + copied_pages
+    cmd = ['pandoc', '-o', 'rsc.epub', '--epub-metadata', placed_title, 
+           '--epub-cover-image', placed_cover, placed_html]
     cmd = [drop_placed_dir(c) for c in cmd]
     print(" ".join(cmd))
+    os.chdir(PLACE_DIR)
+    subprocess.call(cmd)
