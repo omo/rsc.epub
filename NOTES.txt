@@ -1,0 +1,12 @@
+
+
+TODO:
+
+ [] Get HTML
+ [] Get Images
+ [] Reorganize HTML
+   [x] Covert HTML to XHTML - Pandoc does this for you.
+   [] Drop Decorations
+   [] Rewrite Link URLs (if needed).
+ [] Organize metadata
+ 
